@@ -10,14 +10,15 @@ class Notice {
   final List<String> imageUrls;
   final String author;
   final int views;
-  final int viewsToday; // NEW
-  final List<Map<String, String>> files; // [{'name': '...', 'url': '...'}]
+  final int viewsToday;
+  final List<Map<String, String>> files;
   bool isScraped;
-  final bool? isImportant; // NEW
-  final bool? isUrgent; // NEW
-  final bool isDeleted; // NEW
-  final bool isRead; // NEW
-  final DocumentSnapshot? doc; // 페이지네이션용
+  final bool? isImportant;
+  final bool? isUrgent;
+  final bool isDeleted;
+  final bool isRead;
+  final DocumentSnapshot? doc;
+  final DateTime? parsedDate; // NEW: 성능 최적화용 파싱된 날짜
 
   Notice({
     required this.id,
@@ -35,8 +36,9 @@ class Notice {
     this.isImportant = false,
     this.isUrgent = false,
     this.isDeleted = false,
-    this.isRead = true, // 기본값 읽음(=강조 안함)
+    this.isRead = true,
     this.doc,
+    this.parsedDate, // NEW
   });
 
   factory Notice.fromFirestore(
@@ -46,19 +48,33 @@ class Notice {
   ]) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
-    // ★ 날짜 변환 로직
+    // ★ 날짜 변환 로직 개선
     String formattedDate = '';
+    DateTime? parsed;
 
     try {
       if (data['date'] is Timestamp) {
         // 1. 타임스탬프인 경우 (default)
-        DateTime dt = (data['date'] as Timestamp).toDate();
+        parsed = (data['date'] as Timestamp).toDate();
         formattedDate =
-            "${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}";
+            "${parsed.year}.${parsed.month.toString().padLeft(2, '0')}.${parsed.day.toString().padLeft(2, '0')}";
       } else if (data['date'] is String) {
-        // 2. 문자열인 경우 (예외 처리)
-        // DB에 "2025.11.20" 혹은 "2025-11-20" 처럼 문자열로 저장된 경우 그대로 사용
-        formattedDate = data['date'];
+        // 2. 문자열인 경우
+        String dateStr = data['date'].toString().trim();
+        formattedDate = dateStr;
+
+        // 파싱 시도 (다양한 포맷 지원)
+        // 구분자 통일
+        String cleanDate = dateStr.replaceAll('/', '.').replaceAll('-', '.');
+        List<String> parts = cleanDate.split('.');
+        if (parts.length >= 3) {
+          int? year = int.tryParse(parts[0]);
+          int? month = int.tryParse(parts[1]);
+          int? day = int.tryParse(parts[2]);
+          if (year != null && month != null && day != null) {
+            parsed = DateTime(year, month, day);
+          }
+        }
       }
     } catch (e) {
       formattedDate = '날짜 없음';
@@ -91,14 +107,15 @@ class Notice {
       imageUrls: List<String>.from(data['imageUrls'] ?? data['images'] ?? []),
       author: data['author']?.toString() ?? '학과사무실',
       views: (data['views'] is int) ? data['views'] : 0,
-      viewsToday: (data['views_today'] is int) ? data['views_today'] : 0, // NEW
+      viewsToday: (data['views_today'] is int) ? data['views_today'] : 0,
       files: parsedFiles,
       isScraped: userScraps.contains(doc.id),
-      isRead: userReadNotices.contains(doc.id), // NEW
+      isRead: userReadNotices.contains(doc.id),
       isImportant: data['is_important'] ?? false,
       isUrgent: data['is_urgent'] ?? false,
       isDeleted: data['is_deleted'] ?? false,
       doc: doc,
+      parsedDate: parsed, // NEW
     );
   }
 }

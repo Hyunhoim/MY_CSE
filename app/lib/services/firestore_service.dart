@@ -258,6 +258,45 @@ class FirestoreService {
     return notices;
   }
 
+  // 중요 공지 가져오기 (Stream)
+  Stream<List<Notice>> getImportantNotices() {
+    final user = _auth.currentUser;
+    // 비로그인 상태 처리 (예외 방지)
+    if (user == null) {
+      return _db
+          .collection('notices')
+          .where('is_important', isEqualTo: true)
+          .limit(20)
+          .snapshots()
+          .map(
+            (snapshot) => snapshot.docs
+                .map((doc) => Notice.fromFirestore(doc, []))
+                .toList(),
+          );
+    }
+
+    final noticeStream = _db
+        .collection('notices')
+        .where('is_important', isEqualTo: true)
+        .limit(20)
+        .snapshots();
+
+    final userStream = _db.collection('users').doc(user.uid).snapshots();
+
+    return Rx.combineLatest2(noticeStream, userStream, (
+      QuerySnapshot noticeSnapshot,
+      DocumentSnapshot userSnapshot,
+    ) {
+      final userData = userSnapshot.data() as Map<String, dynamic>?;
+      final scraps = List<String>.from(userData?['scraps'] ?? []);
+      final readNotices = List<String>.from(userData?['readNotices'] ?? []);
+
+      return noticeSnapshot.docs.map((doc) {
+        return Notice.fromFirestore(doc, scraps, readNotices);
+      }).toList();
+    });
+  }
+
   // ★ 알림 설정 토글 (Firestore에 저장)
   Future<void> toggleNotificationSetting(String key, bool isEnabled) async {
     String uid = _auth.currentUser!.uid;
@@ -367,14 +406,32 @@ class FirestoreService {
     String uid = _auth.currentUser!.uid;
     DocumentReference userRef = _db.collection('users').doc(uid);
 
-    if (currentStatus) {
-      await userRef.update({
-        'scraps': FieldValue.arrayRemove([noticeId]),
-      });
-    } else {
-      await userRef.update({
-        'scraps': FieldValue.arrayUnion([noticeId]),
-      });
+    try {
+      if (currentStatus) {
+        await userRef.update({
+          'scraps': FieldValue.arrayRemove([noticeId]),
+        });
+      } else {
+        // 공지가 실제로 존재하는지 확인 (삭제된 공지 스크랩 방지)
+        final noticeDoc = await _db.collection('notices').doc(noticeId).get();
+        if (!noticeDoc.exists) {
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'not-found',
+            message: 'Notice not found',
+          );
+        }
+
+        await userRef.update({
+          'scraps': FieldValue.arrayUnion([noticeId]),
+        });
+      }
+    } catch (e) {
+      if (e is FirebaseException && e.code == 'not-found') {
+        // 이미 삭제된 공지인 경우 무시하거나 UI에서 처리하도록 rethrow
+        rethrow;
+      }
+      print("Error toggling scrap: $e");
     }
   }
 
@@ -384,16 +441,25 @@ class FirestoreService {
     DocumentReference userRef = _db.collection('users').doc(uid);
     DocumentReference noticeRef = _db.collection('notices').doc(noticeId);
 
-    // 1. 유저 읽음 기록 추가
-    await userRef.update({
-      'readNotices': FieldValue.arrayUnion([noticeId]),
-    });
+    try {
+      // 1. 유저 읽음 기록 추가 (유저 정보는 항상 존재한다고 가정)
+      await userRef.update({
+        'readNotices': FieldValue.arrayUnion([noticeId]),
+      });
 
-    // 2. 공지 조회수 증가
-    await noticeRef.update({
-      'views': FieldValue.increment(1),
-      'views_today': FieldValue.increment(1),
-    });
+      // 2. 공지 조회수 증가 (삭제된 경우 실패 가능)
+      await noticeRef.update({
+        'views': FieldValue.increment(1),
+        'views_today': FieldValue.increment(1),
+      });
+    } catch (e) {
+      // 문서가 삭제된 경우(not-found)는 무시
+      if (e is FirebaseException && e.code == 'not-found') {
+        print("Notice $noticeId not found during markNoticeAsRead. Ignoring.");
+        return;
+      }
+      print("Error marking notice read: $e");
+    }
   }
 
   // 전체 공지(최근 100개) 일괄 읽음 처리
@@ -979,10 +1045,22 @@ class FirestoreService {
 
   // 모든 일정 가져오기
   Stream<List<Event>> getEvents() {
+    // 6개월 전부터 조회 (캘린더 스크롤 고려, 너무 오래된 데이터 조회 방지)
+    final sixMonthsAgo = DateTime.now().subtract(const Duration(days: 180));
+    final startOfSixMonthsAgo = DateTime(
+      sixMonthsAgo.year,
+      sixMonthsAgo.month,
+      sixMonthsAgo.day,
+    );
+
     return _db
         .collection('events')
+        .where(
+          'startDate',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(startOfSixMonthsAgo),
+        )
         .orderBy('startDate')
-        .limit(100) // 최근 100개만
+        .limit(300) // 충분히 많은 미래 데이터 확보
         .snapshots()
         .map((snapshot) {
           return snapshot.docs.map((doc) => Event.fromFirestore(doc)).toList();

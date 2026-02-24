@@ -44,8 +44,15 @@ class _NoticeDetailScreenState extends State<NoticeDetailScreen> {
     _isImportant = widget.notice.isImportant ?? false;
     _isUrgent = widget.notice.isUrgent ?? false;
 
-    // 화면 진입 시 읽음 처리
-    _firestoreService.markNoticeAsRead(widget.notice.id);
+    // 화면 진입 시 읽음 처리 & 존재 여부 확인
+    _firestoreService.markNoticeAsRead(widget.notice.id).then((_) {
+      // 성공 시 아무 동작 없음
+    }).catchError((e) {
+      if (mounted) {
+        ToastUtils.show(context, "삭제된 공지이거나 존재하지 않습니다.", isError: true);
+        // 필요하다면 여기서 바로 pop하거나, 사용자 행동 시 처리
+      }
+    });
 
     // 스트림 초기화 (리빌드 시 재구독 방지)
     final user = FirebaseAuth.instance.currentUser;

@@ -79,27 +79,17 @@ class _UrgentNoticeWidgetState extends State<UrgentNoticeWidget> {
             .map((doc) => Notice.fromFirestore(doc, []))
             .where((n) {
               if (n.isUrgent != true) return false;
-              try {
-                String dateStr = n.date
-                    .replaceAll('.', '-')
-                    .replaceAll('/', '-')
-                    .trim();
-                DateTime? noticeDate = DateTime.tryParse(dateStr);
-                if (noticeDate == null) {
-                  List<String> parts = n.date.split('.');
-                  if (parts.length >= 3) {
-                    noticeDate = DateTime(
-                      int.parse(parts[0].trim()),
-                      int.parse(parts[1].trim()),
-                      int.parse(parts[2].trim()),
-                    );
-                  }
-                }
-                if (noticeDate != null) {
-                  final diff = now.difference(noticeDate).inDays;
-                  return diff <= 14;
-                }
-              } catch (e) {}
+              if (n.isDeleted) return false; // 삭제된 공지 제외
+
+              // 모델에서 이미 파싱된 날짜 사용 (성능 최적화)
+              final noticeDate = n.parsedDate;
+              
+              if (noticeDate != null) {
+                final diff = now.difference(noticeDate).inDays;
+                // 14일 이내인 것만 표시
+                return diff <= 14; 
+              }
+              
               return false;
             })
             .toList();

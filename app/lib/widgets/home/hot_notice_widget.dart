@@ -2,51 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/notice.dart';
 import '../../screens/notice_detail_screen.dart';
+import '../../services/firestore_service.dart';
 import '../common/custom_loading_indicator.dart';
 import '../common/bounceable.dart'; // Toss-style Interaction
 
-class HotNoticeWidget extends StatefulWidget {
+class HotNoticeWidget extends StatelessWidget {
   final bool forceShow;
 
   const HotNoticeWidget({super.key, this.forceShow = false});
 
   @override
-  State<HotNoticeWidget> createState() => _HotNoticeWidgetState();
-}
-
-class _HotNoticeWidgetState extends State<HotNoticeWidget> {
-  Future<QuerySnapshot>? _noticesFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNotices();
-  }
-
-  void _loadNotices() {
-    setState(() {
-      _noticesFuture = FirebaseFirestore.instance
-          .collection('notices')
-          .orderBy('views_today', descending: true)
-          .limit(5)
-          .get();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return FutureBuilder<QuerySnapshot>(
-      future: _noticesFuture,
+    // StreamBuilder로 변경하여 실시간 업데이트 반영
+    return StreamBuilder<List<Notice>>(
+      stream: FirestoreService().getHotNotices(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CustomLoadingIndicator());
         }
 
-        final notices = snapshot.data!.docs
-            .map((doc) => Notice.fromFirestore(doc, []))
-            .toList();
+        final notices = snapshot.data!;
+        
+        // 삭제된 공지 제외 (FirestoreService에서 이미 처리하지만 이중 체크)
+        final validNotices = notices.where((n) => !n.isDeleted).toList();
 
-        if (notices.isEmpty) {
+        if (validNotices.isEmpty) {
           return Container(
             width: double.infinity,
             decoration: BoxDecoration(
@@ -136,11 +116,14 @@ class _HotNoticeWidgetState extends State<HotNoticeWidget> {
               ),
               const Divider(height: 1, color: Color(0xFFF2F4F6)),
               Column(
-                children: notices.asMap().entries.map((entry) {
+                children: validNotices.asMap().entries.map((entry) {
                   final index = entry.key;
                   final notice = entry.value;
-                  final isLast = index == notices.length - 1;
+                  final isLast = index == validNotices.length - 1;
+                  
+                  // Key 추가로 리빌드 최적화
                   return Column(
+                    key: ValueKey(notice.id),
                     children: [
                       Bounceable(
                         onTap: () {
@@ -162,7 +145,6 @@ class _HotNoticeWidgetState extends State<HotNoticeWidget> {
                             horizontal: 20,
                             vertical: 12,
                           ),
-                          // onTap 제거
                           leading: Container(
                             width: 28,
                             height: 28,
@@ -205,7 +187,7 @@ class _HotNoticeWidgetState extends State<HotNoticeWidget> {
                           ),
                         ),
                       ),
-                      if (index != notices.length - 1)
+                      if (!isLast)
                         const Divider(
                           height: 1,
                           color: Color(0xFFF2F4F6),

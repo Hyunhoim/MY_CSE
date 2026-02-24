@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/notice.dart';
 import '../../screens/notice_detail_screen.dart';
+import '../../services/firestore_service.dart';
 import '../../screens/notice_list_screen.dart';
 import '../common/bounceable.dart'; // Toss-style Interaction
 
@@ -16,42 +17,29 @@ class ImportantNoticeWidget extends StatefulWidget {
 }
 
 class _ImportantNoticeWidgetState extends State<ImportantNoticeWidget> {
-  Future<QuerySnapshot>? _noticesFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNotices();
-  }
-
-  void _loadNotices() {
-    setState(() {
-      _noticesFuture = FirebaseFirestore.instance
-          .collection('notices')
-          .where('is_important', isEqualTo: true)
-          .limit(20)
-          .get();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<QuerySnapshot>(
-      future: _noticesFuture,
+    // StreamBuilder로 변경하여 실시간 업데이트 및 삭제 반영
+    return StreamBuilder<List<Notice>>(
+      stream: FirestoreService().getImportantNotices(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const SizedBox.shrink();
+          return const SizedBox.shrink(); // 데이터 로딩 중에는 빈 공간 (또는 로딩 표시)
         }
 
-        // Client-side Sort
-        final notices = snapshot.data!.docs
-            .map((doc) => Notice.fromFirestore(doc, []))
-            .toList();
+        final notices = snapshot.data!;
 
-        notices.sort((a, b) => b.date.compareTo(a.date));
-        final displayNotices = notices;
+        // 1. 삭제된 공지 필터링
+        final validNotices = notices.where((n) => !n.isDeleted).toList();
 
-        if (displayNotices.isEmpty) {
+        // 2. 날짜순 정렬 (parsedDate 사용)
+        validNotices.sort((a, b) {
+          DateTime dateA = a.parsedDate ?? DateTime(1900);
+          DateTime dateB = b.parsedDate ?? DateTime(1900);
+          return dateB.compareTo(dateA); // 최신순
+        });
+
+        if (validNotices.isEmpty) {
           return Container(
             width: double.infinity,
             decoration: BoxDecoration(
@@ -181,7 +169,7 @@ class _ImportantNoticeWidgetState extends State<ImportantNoticeWidget> {
                 ),
                 child: Column(
                   // Show only top 3 items
-                  children: displayNotices.take(3).map((notice) {
+                  children: validNotices.take(3).map((notice) {
                     return _buildNoticeItem(context, notice);
                   }).toList(),
                 ),
