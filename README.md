@@ -26,14 +26,40 @@ MY_CSE는 **경상국립대학교 컴퓨터공학부 학생들이 학과 공지�
 
 ```mermaid
 flowchart TD
-    W["학과 게시판"] --> C["Selenium 수집기"]
-    G["GitHub Actions 예약 실행"] --> C
-    C --> K["Gemini 분류·실패 시 키워드 규칙"]
-    K --> D["Cloud Firestore에 공지 저장"]
-    D --> A["Flutter 앱에서 검색·스크랩"]
-    D -->|"관리자 발송 요청 감지"| F["Cloud Functions에서 FCM 발송"]
-    F --> A
+    subgraph CRAWL["1. 예약 수집과 중복 처리"]
+      A["GitHub Actions 예약 실행"] --> B["Selenium으로 학과 공지 목록 수집"]
+      B --> C["게시글 ID로 Firestore 문서 조회"]
+      C --> D{"본문이 이미 저장되어 있는가?"}
+      D -->|"예"| E["중요·긴급 여부 등 메타데이터만 갱신"]
+      D -->|"아니요"| F["상세 페이지에서 본문과 첨부 정보 수집"]
+    end
+
+    subgraph CATEGORIZE["2. 분류와 저장"]
+      F --> G{"수동 분류가 있는가?"}
+      G -->|"예"| H["수동 분류 적용"]
+      G -->|"아니요"| I["Gemini에 공지 제목 분류 요청"]
+      I -->|"유효한 분류 응답"| J["분류 결과 적용"]
+      I -->|"요청 제한"| K["지수 백오프로 재시도"]
+      K -->|"유효한 분류 응답"| J
+      K -->|"재시도 한도 도달"| L["제목의 키워드 규칙 적용"]
+      I -->|"권한·응답 오류 등"| L
+      H --> M["본문·분류·메타데이터를 Firestore에 병합"]
+      J --> M
+      L --> M
+    end
+
+    subgraph DISTRIBUTE["3. 앱 열람과 공지 알림"]
+      E --> N["Firestore notices"]
+      M --> N
+      N --> O["Flutter 앱에서 목록·검색·스크랩 제공"]
+      P["관리자의 발송 요청"] --> N
+      N -->|"발송 플래그 변경 감지"| Q["Cloud Functions가 notice 토픽에 발송"]
+      Q --> R["FCM 구독 앱에 알림 도착"]
+      Q --> S["발송 성공·실패 상태 기록"]
+    end
 ```
+
+공지 열람과 푸시 발송 흐름입니다. 푸시는 관리자가 발송을 요청한 공지의 플래그 변경으로 실행됩니다. [공지 수집기](ai_server/crawler.py) · [발송 함수](android/functions/index.js)
 
 ## Tech Stack
 
