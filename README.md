@@ -22,6 +22,19 @@ MY_CSE는 **경상국립대학교 컴퓨터공학부 학생들이 학과 공지�
 
 *Google Play 배포 페이지에 등록된 건물 지도 화면.*
 
+## Architecture
+
+```mermaid
+flowchart TD
+    W["학과 게시판"] --> C["Selenium 수집기"]
+    G["GitHub Actions 예약 실행"] --> C
+    C --> K["Gemini 분류·실패 시 키워드 규칙"]
+    K --> D["Cloud Firestore에 공지 저장"]
+    D --> A["Flutter 앱에서 검색·스크랩"]
+    D -->|"관리자 발송 요청 감지"| F["Cloud Functions에서 FCM 발송"]
+    F --> A
+```
+
 ## Tech Stack
 
 | 영역 | 기술 |
