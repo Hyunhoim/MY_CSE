@@ -1,93 +1,70 @@
-<div align="center">
-
 # MY_CSE
 
-**AI 기반 경상국립대학교 컴퓨터공학부 통합 공지 앱**
+**경상국립대학교 컴퓨터공학부 공지를 한곳에서 찾고, 필요한 소식을 알림으로 받는 Flutter 앱**
 
-![Flutter](https://img.shields.io/badge/Flutter-315B89?style=flat-square) ![Dart](https://img.shields.io/badge/Dart-315B89?style=flat-square) ![Firebase](https://img.shields.io/badge/Firebase-315B89?style=flat-square) ![Python](https://img.shields.io/badge/Python-315B89?style=flat-square) ![Gemini](https://img.shields.io/badge/Gemini-315B89?style=flat-square) ![Selenium](https://img.shields.io/badge/Selenium-315B89?style=flat-square) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-315B89?style=flat-square)
+## 프로젝트 소개
 
-[Overview](#overview) · [Features](#features) · [Architecture](#architecture) · [Tech Stack](#tech-stack) · [How to Run](#how-to-run)
+학과 게시판의 학사·장학·취업 공지를 모바일에서 쉽게 찾을 수 있도록 수집, 분류, 열람 흐름을 연결했습니다. Python 수집기가 공지를 Firestore에 저장하고, Flutter 앱이 검색·분류·스크랩 화면을 제공합니다. 일정, 식단, 그룹, 강의실 안내도 같은 앱에서 볼 수 있습니다.
 
-</div>
+## 주요 기능
 
----
-
-## Overview
-
-학과 웹사이트의 공지사항과 대학생활 정보를 모바일에서 통합 조회하는 서비스입니다. Python 크롤러가 공지를 수집하고 Gemini 기반 분류기가 공지 유형을 판정하며, Firebase를 통해 모바일 앱에 데이터를 전달합니다. 학과 정보 접근성을 높이고 필요한 공지를 빠르게 찾도록 지원합니다.
-
-## Features
-
-| 기능 | 설명 |
+| 사용자 흐름 | 구현 |
 | --- | --- |
-| 공지 수집 | Selenium 및 BeautifulSoup 기반 학과 웹사이트 수집 |
-| AI 자동 분류 | 학사·장학·취업·외부행사·학과행사·공모전 분류, API 실패 시 키워드 fallback |
-| 공지 탐색 | 검색, 카테고리, 중요·긴급·인기 공지 및 스크랩 |
-| 대학생활 | 캘린더, 식단, 그룹, 홈 위젯 설정 |
-| 알림 | FCM 토큰 관리, 공지 토픽 구독 및 로컬 알림 |
-| 지도 | 실내 강의실 검색, 인접 리스트와 BFS 기반 경로 탐색, 3D 지도 화면 |
-| 관리 | 사용자 승인, 공지 및 행사 관리 화면 |
+| 공지 모아 보기 | 학과 게시판을 수집하고 제목을 학사·장학·취업·외부행사·학과행사·공모전으로 분류합니다. |
+| 필요한 공지 찾기 | 카테고리 탐색, 검색, 중요·긴급·인기 공지, 스크랩을 제공합니다. |
+| 소식 전달하기 | 계정 승인과 관리자 공지·행사 관리 화면을 제공합니다. 발송 요청은 FCM을 통해 공지 구독자에게 전달됩니다. |
+| 학교생활 정보 보기 | 일정·식단·그룹과 함께 실내 강의실 검색, 층별 경로 안내, 3D 지도 화면을 제공합니다. |
 
-## Architecture
+## 아키텍처
 
-~~~mermaid
+```mermaid
 flowchart LR
-  G["GitHub Actions"] --> C["Python Crawler"]
-  W["학과 웹사이트"] --> C
-  C --> AI["Gemini / Keyword Fallback"]
-  AI --> DB["Cloud Firestore"]
-  DB --> APP["Flutter App"]
-  AUTH["Firebase Auth"] --> APP
-  DB --> N["FCM 알림"]
-  N --> APP
-~~~
+    G["GitHub Actions"] --> C["Python 수집기"]
+    W["학과 게시판"] --> C
+    C --> K["Gemini 분류 · 키워드 대체"]
+    K --> D["Cloud Firestore"]
+    D --> A["Flutter 앱"]
+    H["Firebase Authentication"] --> A
+    A -->|관리자 발송 요청| D
+    D -->|발송 플래그 감지| F["Cloud Functions"]
+    F --> M["FCM 공지 토픽"]
+    M --> A
+```
 
-| Path | Responsibility |
+| 영역 | 기술과 코드 위치 |
 | --- | --- |
-| `app/lib/` | 화면, 모델, Firebase 서비스, 지도 기능 |
-| `ai_server/` | 크롤링, AI 분류, 식단 수집 및 데이터 관리 |
-| `android/functions/` | Firebase Functions |
-| `.github/workflows/` | 예약 수집 및 유지보수 작업 |
+| 모바일 | Flutter, Dart, Firebase Auth·Firestore·Storage, FCM · [app/lib](app/lib/) |
+| 수집·분류 | Python, Selenium, BeautifulSoup, Gemini API · [ai_server](ai_server/) |
+| 자동화·알림 | GitHub Actions, Firebase Cloud Functions · [워크플로](.github/workflows/) · [함수](android/functions/) |
 
-## Tech Stack
+## 핵심 구현
 
-| Layer | Technology |
-| --- | --- |
-| Mobile | Flutter, Dart |
-| Backend & Storage | Firebase Authentication, Cloud Firestore, Firebase Storage, Cloud Functions |
-| AI & Crawling | Python, Gemini API, Selenium, BeautifulSoup |
-| Notification | Firebase Cloud Messaging, Flutter Local Notifications |
-| Operations | GitHub Actions, Firebase Crashlytics, Firebase Analytics |
+1. **반복 수집에서 상세 페이지를 다시 열 필요를 줄였습니다.** 게시글 ID를 Firestore 문서 ID로 사용합니다. 본문이 이미 있는 문서는 중요·긴급 여부 등 메타데이터만 병합하고, 새 글이나 본문이 빠진 글만 상세 페이지를 수집합니다. [공지 수집기](ai_server/crawler.py)
+2. **분류 API가 제한되어도 저장을 이어갑니다.** 수동 분류가 있으면 우선 적용합니다. 나머지는 제목을 Gemini에 보내고 허용된 분류를 추출합니다. 429 응답은 백오프로 재시도하고, 실패하거나 허용된 결과를 얻지 못하면 키워드 규칙으로 분류합니다. [분류기](ai_server/gemini_classifier.py)
+3. **지도에서 경로 계산을 분리합니다.** 층별 통로를 인접 리스트로 만들고 BFS로 출발점에서 목적지까지 간선 수가 가장 적은 경로를 구합니다. 부모 노드를 역추적해 화면에 그릴 경로를 복원합니다. [실내 지도](app/lib/features/indoor_map/screens/indoor_map_screen.dart) · [경로 탐색](app/lib/features/indoor_map/services/navigation_service.dart)
 
-## How to Run
+## 실행 및 검증
 
-### 1. Prerequisites
+**모바일 앱**은 Dart 3.10을 지원하는 Flutter SDK, 기기 개발 환경, 개발용 Firebase 프로젝트가 필요합니다. 앱의 Firebase 설정과 대상 플랫폼 설정 파일을 개발용 프로젝트 값으로 구성한 뒤 실행합니다. iOS 빌드에는 macOS와 Xcode가 필요합니다.
 
-Flutter SDK(Dart 3.10 호환), Android 또는 iOS 개발 환경, Firebase 프로젝트 및 Python 3.10/3.11, Chrome이 필요합니다. 자체 개발용 Firebase 설정을 사용하고 기존 운영 데이터에 임의로 연결하지 마세요.
-
-### 2. Mobile App
-
-~~~bash
+```bash
 git clone https://github.com/Hyunhoim/MY_CSE.git
 cd MY_CSE/app
 flutter pub get
 flutter run
-~~~
+```
 
-Firebase Authentication, Firestore, Storage 및 Messaging 설정을 실행 환경에 맞게 준비합니다. iOS 실행에는 macOS와 Xcode가 필요합니다.
+**공지 수집**은 저장소 루트에서 Python 3.11과 Chrome을 준비한 뒤 실행합니다. 활성화한 가상환경에 의존성을 설치하고, `FIREBASE_KEY`에 개발용 서비스 계정 JSON, `GEMINI_API_KEY`에 발급 키를 설정합니다. 수집기는 지정한 Firestore에 직접 씁니다.
 
-### 3. Crawler & AI Classification
-
-저장소 루트에서 실행합니다.
-
-~~~bash
-python -m venv .venv
-# 가상환경 활성화 후
+```bash
 python -m pip install -r ai_server/requirements.txt
-# FIREBASE_KEY 및 GEMINI_API_KEY 환경변수 설정 후
 python ai_server/crawler.py
-~~~
+```
 
-`FIREBASE_KEY`는 Firebase 서비스 계정 JSON, `GEMINI_API_KEY`는 Gemini API 인증 정보입니다. 키 값이나 서비스 계정 파일을 Git에 추가하지 않습니다. 크롤러는 Firestore에 쓰기 작업을 수행하므로 테스트 프로젝트를 사용합니다. 예약 실행은 GitHub Actions의 관련 Secrets를 설정한 뒤 사용합니다.
+개발용 Firestore의 `notices` 컬렉션과 앱 공지 목록에서 같은 문서를 확인할 수 있습니다. 긴급 공지 푸시를 확인하려면 Cloud Functions를 배포하고 앱에서 공지 알림을 구독합니다. 예약 수집의 실행 환경과 시크릿 이름은 [공지 수집 워크플로](.github/workflows/crawl.yml)에서 확인할 수 있습니다.
 
-[원본 저장소](https://github.com/kdhun-0814/MY_CSE) · [모바일 프로젝트](app/) · [수집 서버](ai_server/)
+## 구현 범위
+
+예약 공지 수집은 실행당 최근 목록 3페이지를 대상으로 합니다. 분류기는 공지 제목을 기준으로 카테고리를 부여합니다. 실내 BFS 경로는 층별 데이터에서 간선 수를 최소화하며, 물리적 거리 가중치는 적용하지 않습니다.
+
+[원본 프로젝트](https://github.com/kdhun-0814/MY_CSE) · [앱 소스](app/) · [수집 서버](ai_server/)
